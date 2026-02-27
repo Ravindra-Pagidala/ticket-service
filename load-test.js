@@ -258,8 +258,8 @@ async function main() {
   }
 
   // 2. Wait a moment for async queue workers to flush to DB
-  console.log("   ⏳ Waiting 3s for async queue workers to flush to DB...");
-  await new Promise((r) => setTimeout(r, 3000));
+  console.log("   ⏳ Waiting 8s for async queue workers to flush to DB...");
+  await new Promise((r) => setTimeout(r, 8000));
 
   // 3. Check for duplicate ticket numbers
   const dupResult = await pool.query(`
