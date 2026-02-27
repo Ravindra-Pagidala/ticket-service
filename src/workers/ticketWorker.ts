@@ -1,19 +1,20 @@
 import { Worker, Job } from "bullmq";
-import { redisClient } from "../config/redis";
+import { bullMQRedisOptions } from "../config/redis";
 import { ticketRepository } from "../repositories/ticketRepository";
-import pool from "../config/database";
 import { TicketPersistJob } from "../types";
+import pool from "../config/database";
 
 /**
- * Worker: runs in the background (same process or separate process).
+ * Worker: runs in the background (same process).
  * Picks jobs off the queue and persists ticket rows to PostgreSQL.
  *
- * This decouples the HTTP response time from the DB write latency.
- * The user gets a response as soon as Redis confirms reservation —
- * the DB write happens asynchronously here.
+ * Decouples HTTP response time from DB write latency — user gets a response
+ * as soon as Redis confirms reservation; DB write happens here asynchronously.
  *
- * Concurrency = 10 means this worker processes up to 10 jobs simultaneously.
- * Tune this based on your DB pool size (max: 20 in database.ts).
+ * concurrency: 10 means up to 10 jobs processed simultaneously.
+ *
+ * NOTE: Uses bullMQRedisOptions (maxRetriesPerRequest: null) — required by BullMQ
+ * for Worker because it uses blocking Redis commands (BRPOPLPUSH) internally.
  */
 export function startTicketWorker(): Worker<TicketPersistJob> {
   const worker = new Worker<TicketPersistJob>(
@@ -46,7 +47,7 @@ export function startTicketWorker(): Worker<TicketPersistJob> {
       }
     },
     {
-      connection: redisClient,
+      connection: bullMQRedisOptions,
       concurrency: 10,
     }
   );
