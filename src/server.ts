@@ -1,94 +1,97 @@
-import express, { Request, Response } from "express";
-import { purchaseTickets } from "./ticketService";
-
-interface PurchaseRequest {
-  userId: string;
-  eventId: string;
-  quantity: number;
-}
-
-interface PurchaseResponse {
-  success: boolean;
-  tickets?: number[];
-  error?: string;
-}
+import express from "express";
+import { ticketController } from "./controllers/ticketController";
+import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { ticketService } from "./services/ticketService";
+import { startTicketWorker } from "./workers/ticketWorker";
+import pool from "./config/database";
+import { redisClient } from "./config/redis";
 
 const app = express();
 app.use(express.json());
 
-app.post(
-  "/purchase",
-  async (
-    req: Request<{}, {}, PurchaseRequest>,
-    res: Response<PurchaseResponse>,
-  ) => {
-    try {
-      const { userId, eventId, quantity } = req.body;
+// ─── Routes ───────────────────────────────────────────────────────────────────
 
-      if (!userId || !eventId || !quantity) {
-        res.status(400).json({
-          success: false,
-          error: "Missing userId, eventId, or quantity",
-        });
-        return;
-      }
+app.post("/purchase", (req, res) => ticketController.purchase(req, res));
 
-      if (quantity % 8 !== 0) {
-        res.status(400).json({
-          success: false,
-          error: "Quantity must be a multiple of 8",
-        });
-        return;
-      }
+// Health check — useful for load balancer probes
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
-      const tickets = await purchaseTickets(userId, eventId, quantity);
+// ─── Middleware (must come AFTER routes) ──────────────────────────────────────
 
-      res.json({
-        success: true,
-        tickets,
-      });
-    } catch (error) {
-      res.status(400).json({
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  },
-);
+app.use(notFoundHandler);
+app.use(globalErrorHandler);
 
-const PORT = 3000;
+// ─── Startup ──────────────────────────────────────────────────────────────────
+
+const PORT = Number(process.env.PORT ?? 3000);
+const EVENTS_TO_SYNC = [
+  "EVENT001",
+  "EVENT002",
+  "EVENT003",
+  "EVENT004",
+  "EVENT005",
+  "EVENT006",
+];
 
 async function waitForDatabase(maxRetries = 30): Promise<void> {
-  const { Pool } = await import("pg");
-  const testPool = new Pool({
-    host: "localhost",
-    port: 5433,
-    database: "tickets",
-    user: "postgres",
-    password: "postgres",
-  });
-
   for (let i = 0; i < maxRetries; i++) {
     try {
-      await testPool.query("SELECT 1");
-      console.log("Database is ready");
-      await testPool.end();
+      await pool.query("SELECT 1");
+      console.log("[DB] Database is ready");
       return;
-    } catch (error) {
-      console.log(`Waiting for database... (attempt ${i + 1}/${maxRetries})`);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch {
+      console.log(`[DB] Waiting for database... (${i + 1}/${maxRetries})`);
+      await new Promise((r) => setTimeout(r, 1000));
     }
   }
-  throw new Error("Database connection timeout");
+  throw new Error("Database connection timeout after max retries");
 }
 
-waitForDatabase()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch((error) => {
-    console.error("Failed to start server:", error);
-    process.exit(1);
+async function waitForRedis(maxRetries = 30): Promise<void> {
+  for (let i = 0; i < maxRetries; i++) {
+    if (redisClient.status === "ready") {
+      console.log("[Redis] Redis is ready");
+      return;
+    }
+    console.log(`[Redis] Waiting for Redis... (${i + 1}/${maxRetries})`);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  // Redis is optional — we fall back to DB if unavailable
+  console.warn("[Redis] Redis not available — will use DB fallback path");
+}
+
+async function syncAllEventsToRedis(): Promise<void> {
+  console.log("[Startup] Syncing all events to Redis...");
+  await Promise.all(
+    EVENTS_TO_SYNC.map((eventId) =>
+      ticketService.syncEventToRedis(eventId).catch((err) => {
+        console.error(`[Startup] Failed to sync ${eventId}:`, (err as Error).message);
+      })
+    )
+  );
+  console.log("[Startup] Redis sync complete");
+}
+
+async function bootstrap(): Promise<void> {
+  await waitForDatabase();
+  await waitForRedis();
+
+  if (redisClient.status === "ready") {
+    await syncAllEventsToRedis();
+    // Start background worker — processes async DB writes from queue
+    startTicketWorker();
+    console.log("[Worker] Ticket persistence worker started");
+  }
+
+  app.listen(PORT, () => {
+    console.log(`[Server] Running on port ${PORT}`);
+    console.log(`[Server] Mode: ${redisClient.status === "ready" ? "Redis + Queue (high scale)" : "DB only (fallback)"}`);
   });
+}
+
+bootstrap().catch((err) => {
+  console.error("[Server] Fatal startup error:", err);
+  process.exit(1);
+});

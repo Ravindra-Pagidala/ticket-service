@@ -18,5 +18,23 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    # AOF persistence — Redis writes every command to disk.
+    # If Redis crashes and restarts, it replays the log and recovers state.
+    # Without this, a Redis restart would lose all ticket reservations that
+    # haven't been persisted to Postgres yet.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
+  redis_data:
