@@ -1,4 +1,4 @@
-# Bugs , Fixes , Arcitectural Decisions & Trade Offs
+# Bugs , Fixes , Architectural Decisions & Trade Offs
 
 So ,there are 2 bugs
 
