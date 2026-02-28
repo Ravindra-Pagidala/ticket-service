@@ -58,13 +58,14 @@ available_non_negative CHECK (available >= 0) for tickes_pool table
 **The data is consistent & accurate ,because of these 2 things**
 
 1 ) **Redis AOF Persistence :** Append-Only-File contains all write operations executed by redis . So even when redis server is down & restarted , it reads those logs and maintains the exact data which is needed at the moment . I've added these commands in docker - compose  file . The log file is preserved even when redis container is destroyed.
-**docker-compose.yml**
 
-
+```sql
 redis:
-command: redis-server --appendonly yes
+ command: redis-server --appendonly yes
 volumes:
 - redis_data:/data
+```
+
 
 2 ) **syncAllEventsToRedis in server.ts file**
 whenever server is crashed, restarted, manually flushed the next server startup will re-populate Redis with the correct values from PostgreSQL.
