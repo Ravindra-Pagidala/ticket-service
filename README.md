@@ -139,20 +139,7 @@ completely breaking the blocking semantics BullMQ depends on.
 
 ---
 
-### Issue 2 — Port 3000 Already in Use
-```
-Error: listen EADDRINUSE: address already in use :::3000
-```
-**Root cause:** Previous server process didn't shut down cleanly.
-
-**Fix:**
-```bash
-kill -9 $(lsof -ti :3000) && npm run dev
-```
-
----
-
-### Issue 3 — DB Consistency Mismatch After Load Test
+### Issue 2 — DB Consistency Mismatch After Load Test
 ```
 EVENT001   Expected: 200   Actual: 5000   ⚠️ MISMATCH
 ```
