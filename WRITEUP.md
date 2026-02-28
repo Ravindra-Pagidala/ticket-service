@@ -59,6 +59,8 @@ available_non_negative CHECK (available >= 0) for tickes_pool table
 
 1 ) **Redis AOF Persistence :** Append-Only-File contains all write operations executed by redis . So even when redis server is down & restarted , it reads those logs and maintains the exact data which is needed at the moment . I've added these commands in docker - compose  file . The log file is preserved even when redis container is destroyed.
 **docker-compose.yml**
+
+
 redis:
 command: redis-server --appendonly yes
 volumes:
